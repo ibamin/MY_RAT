@@ -1,0 +1,11 @@
+{
+  "agent_name": "Agent-Test.exe",
+  "agent_user": "DESKTOP-TEST",
+  "agent_guid": "88463253-2f11-457b-a22d-ceb4be72b778",
+  "status": 2,
+  "is_privilege": 0,
+  "command": "sss",
+  "last_seen": "2024-12-08T08:46:01.364073",
+  "stdout": null,
+  "stderr": null
+}

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>에이전트 명령</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f5f5f5;
+        }
+        .status-active {
+            color: green;
+            font-weight: bold;
+        }
+        .status-inactive {
+            color: red;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .form-example {
+            margin-top: 30px;
+        }
+        .form-example label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .form-example input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .button {
+            margin-top: 10px;
+            padding: 8px 16px;
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .button:hover {
+            background-color: #0052a3;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #0066cc;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="{{ url_for('index') }}" class="back-link">← 목록으로 돌아가기</a>
+        <h1>에이전트 정보</h1>
+        <table>
+            <tr>
+                <th>이름</th>
+                <th>사용자</th>
+                <th>GUID</th>
+                <th>상태</th>
+                <th>권한</th>
+                <th>마지막 확인</th>
+            </tr>
+            <tr>
+                <td>{{ agent.agent_name }}</td>
+                <td>{{ agent.agent_user }}</td>
+                <td>{{ agent.agent_guid }}</td>
+                <td class="{% if agent.status == 1 %}status-active{% else %}status-inactive{% endif %}">
+                    {{ "활성" if agent.status == 1 else "비활성" }}
+                </td>
+                <td>{{ "높음" if agent.is_privilege == 1 else "일반" }}</td>
+                <td>{{ agent.last_seen }}</td>
+            </tr> 
+        </table>
+        <div class="form-example">
+            <label for="Agent_Command">Command</label>
+            <input type="text" id="Agent_Command" name="Command" required>
+            <button onclick="sendCommand()" class="button">명령 전송</button>
+        </div>
+        <div class="form-example">
+            Std Out <br>
+            <textarea name="stdout" id="stdout" required>{{agent.stdout}}</textarea>
+        </div>
+        <div class="form-example">
+            Std Err <br>
+            <textarea name="stderr" id="stderr" required>{{agent.stderr}}</textarea>
+        </div>
+    </div>
+    <script>
+    function sendCommand() {
+        const command = document.getElementById('Agent_Command').value;
+        const guid = '{{ agent.agent_guid }}';
+        
+        fetch('/send_command', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                agent_guid: guid,
+                command: command
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert('오류: ' + data.error);
+            } else {
+                alert('명령이 전송되었습니다.');
+                document.getElementById('Agent_Command').value = '';
+            }
+        })
+        .catch(error => {
+            alert('오류가 발생했습니다: ' + error);
+        });
+    }
+    </script>
+</body>
+</html>

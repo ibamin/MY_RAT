@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>에이전트 목록</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f5f5f5;
+        }
+        .status-active {
+            color: green;
+            font-weight: bold;
+        }
+        .status-inactive {
+            color: red;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>에이전트 목록</h1>
+        <table>
+            <tr>
+                <th>이름</th>
+                <th>사용자</th>
+                <th>GUID</th>
+                <th>상태</th>
+                <th>권한</th>
+                <th>마지막 확인</th>
+            </tr>
+            {% for agent in agents %}
+            <tr>
+                <td>{{ agent.agent_name }}</td>
+                <td>{{ agent.agent_user }}</td>
+                <td><a href="{{ url_for('command_page', guid=agent.agent_guid) }}">{{ agent.agent_guid }}</a></td>
+                <td class="{% if agent.status == 1 %}status-active{% else %}status-inactive{% endif %}">
+                    {{ "활성" if agent.status == 1 else "비활성" }}
+                </td>
+                <td>{{ "높음" if agent.is_privilege == 1 else "일반" }}</td>
+                <td>{{ agent.last_seen }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+</body>
+</html>
