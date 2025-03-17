@@ -1,0 +1,1 @@
+C:\Users\shrud\Desktop\RAT\RAT(GUI)\Agent\target\debug\Agent.exe: C:\Users\shrud\Desktop\RAT\RAT(GUI)\Agent\src\main.rs C:\Users\shrud\Desktop\RAT\RAT(GUI)\Agent\src\network\local.rs C:\Users\shrud\Desktop\RAT\RAT(GUI)\Agent\src\network\mod.rs C:\Users\shrud\Desktop\RAT\RAT(GUI)\Agent\src\network\protocol.rs
