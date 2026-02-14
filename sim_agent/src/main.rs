@@ -17,8 +17,17 @@ struct Agent {
 #[derive(Debug, Deserialize, Clone)]
 struct Run {
     id: String,
+    scenario_id: Option<String>,
     test_id: String,
     params_json: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct Step {
+    id: String,
+    idx: i64,
+    name: String,
+    status: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -33,6 +42,14 @@ struct CreateEventRequest {
     agent_id: Option<String>,
     level: String,
     message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CreateEvidenceRequest {
+    run_id: String,
+    step_id: String,
+    kind: String,
+    content_json: Option<String>,
 }
 
 fn env_or(key: &str, fallback: &str) -> String {
@@ -89,16 +106,72 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         for run in pending {
             let run_id = run.id.clone();
+            let scenario_id = run.scenario_id.clone().unwrap_or_else(|| "unknown".to_string());
             let _ = client
                 .post(format!("{}/api/events", server_url))
                 .json(&CreateEventRequest {
                     run_id: Some(run_id.clone()),
                     agent_id: Some(agent.id.clone()),
                     level: "info".to_string(),
-                    message: format!("run_start test_id={}", run.test_id),
+                    message: format!("run_start scenario_id={} test_id={}", scenario_id, run.test_id),
                 })
                 .send()
                 .await;
+
+            let steps: Vec<Step> = client
+                .get(format!("{}/api/runs/{}/steps", server_url, run_id))
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
+
+            for step in steps {
+                let step_id = step.id.clone();
+                let step_idx = step.idx;
+                let step_name = step.name.clone();
+
+                let _ = client
+                    .post(format!("{}/api/events", server_url))
+                    .json(&CreateEventRequest {
+                        run_id: Some(run_id.clone()),
+                        agent_id: Some(agent.id.clone()),
+                        level: "info".to_string(),
+                        message: format!("step_start idx={} name={}", step_idx, step_name),
+                    })
+                    .send()
+                    .await;
+
+                let content_json = serde_json::json!({
+                    "scenario_id": scenario_id.clone(),
+                    "test_id": run.test_id.clone(),
+                    "step": { "id": step_id.clone(), "idx": step_idx, "name": step_name },
+                    "note": "simulated evidence"
+                })
+                .to_string();
+
+                let _ = client
+                    .post(format!("{}/api/evidence", server_url))
+                    .json(&CreateEvidenceRequest {
+                        run_id: run_id.clone(),
+                        step_id,
+                        kind: "telemetry".to_string(),
+                        content_json: Some(content_json),
+                    })
+                    .send()
+                    .await;
+
+                let _ = client
+                    .post(format!("{}/api/events", server_url))
+                    .json(&CreateEventRequest {
+                        run_id: Some(run_id.clone()),
+                        agent_id: Some(agent.id.clone()),
+                        level: "info".to_string(),
+                        message: format!("step_done idx={}", step_idx),
+                    })
+                    .send()
+                    .await;
+            }
 
             tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
