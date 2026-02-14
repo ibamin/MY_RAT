@@ -52,6 +52,7 @@ Metasploit/MSF류 도구에서 자주 발생하는 “성공/실패가 애매한
 - Run: Scenario의 1회 실행(누가/언제/어떤 대상/어떤 버전)
 - Step: 시나리오의 원자 단위 목표
 - Action: Step 수행을 위한 내부 동작(구현 상세는 캡슐화)
+- Choice: 시나리오 분기 선택지(choice_id). 선택에 따라 Step이 unlock될 수 있다.
 - Event: append-only 타임라인 기록(사실)
 - Evidence: Event가 참조하는 불변 아티팩트(해시/로케이터)
 - Assertion: Evidence를 근거로 하는 boolean 검증
@@ -61,6 +62,11 @@ Metasploit/MSF류 도구에서 자주 발생하는 “성공/실패가 애매한
 - Step은 반드시 PASS 또는 FAIL로 끝난다(“완료됨” 같은 중간 상태 금지).
 - PASS는 반드시 evidence_refs가 1개 이상 있어야 한다.
 - FAIL은 reason_code + 관련 evidence를 반드시 포함한다.
+
+시나리오 분기 원칙:
+- Step은 선택적으로 `requires_choice_id`를 가진다.
+- `requires_choice_id`가 있는 Step은 해당 choice_id가 선택되기 전까지 계획/실행 대상에서 제외된다.
+- choice 선택 이후에 Step이 unlock되며, UI/runner는 refresh 후 새 Step을 확인할 수 있다.
 
 예시 reason_code:
 - FAIL_POLICY_DENIED
@@ -163,7 +169,7 @@ Event는 타임라인에 기록되는 "사실"이다.
   "run_id": "<uuid>",
   "agent_id": "<uuid>",
   "level": "info",
-  "message": "run_start test_id=BAS-DEMO-001",
+  "message": "run_start scenario_id=demo-001 test_id=BAS-DEMO-001",
   "ts": "2026-01-01T00:00:00Z"
 }
 ```
@@ -309,7 +315,9 @@ Run Detail은 "C2 콘솔"의 감성을 가지되, 입력은 안전하게 제한�
 - `GET /api/scenarios`
   - 반환: 시나리오 메타 목록(scenario_id, test_id, title, difficulty, version, estimated_time)
 - `GET /api/scenarios/:scenario_id`
-  - 반환: steps/actions/assertions 정의(선언형)
+  - 반환: steps/actions/choices/assertions 정의(선언형)
+  - Step 필드 예시:
+    - `requires_choice_id` (optional): 특정 choice 선택 시에만 unlock
 
 ### 8.2 Runs (확장)
 - `POST /api/runs`
@@ -321,6 +329,9 @@ Run Detail은 "C2 콘솔"의 감성을 가지되, 입력은 안전하게 제한�
   - 반환: run 메타 + run_verdict 요약
 - `GET /api/runs/:run_id/steps`
   - 반환: step 트리 + step 상태
+  - 분기 시나리오의 경우: choice 선택 후 unlock된 step이 추가로 나타날 수 있다.
+- `GET /api/runs/:run_id/events`
+  - 반환: 해당 run에 속한 이벤트 타임라인
 - `GET /api/runs/:run_id/verdict`
   - 반환: step별 verdict + assertions + evidence_refs
 - `GET /api/runs/:run_id/evidence`
@@ -329,6 +340,9 @@ Run Detail은 "C2 콘솔"의 감성을 가지되, 입력은 안전하게 제한�
 ### 8.3 Operator Actions (승인/분기 선택)
 
 운영자 입력은 allowlist 기반이다.
+
+- `GET /api/runs/:run_id/operator-actions`
+  - 반환: operator log(승인/분기 선택 기록)
 
 - `POST /api/runs/:run_id/operator-actions`
   - 입력 예시:
