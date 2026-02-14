@@ -23,6 +23,13 @@ struct Run {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+struct OperatorAction {
+    #[serde(rename = "type")]
+    type_: String,
+    choice_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 struct Step {
     id: String,
     idx: i64,
@@ -118,18 +125,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .send()
                 .await;
 
-            let steps: Vec<Step> = client
-                .get(format!("{}/api/runs/{}/steps", server_url, run_id))
-                .send()
-                .await?
-                .error_for_status()?
-                .json()
-                .await?;
+            if run.scenario_id.is_some() {
+                for _ in 0..20 {
+                    let ops: Vec<OperatorAction> = client
+                        .get(format!("{}/api/runs/{}/operator-actions", server_url, run_id))
+                        .send()
+                        .await?
+                        .error_for_status()?
+                        .json()
+                        .await?;
+                    if ops
+                        .iter()
+                        .any(|o| o.type_ == "select_choice" && o.choice_id.as_deref().unwrap_or("") != "")
+                    {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            }
 
-            for step in steps {
-                let step_id = step.id.clone();
-                let step_idx = step.idx;
-                let step_name = step.name.clone();
+            let mut done_steps: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for _ in 0..10 {
+                let steps: Vec<Step> = client
+                    .get(format!("{}/api/runs/{}/steps", server_url, run_id))
+                    .send()
+                    .await?
+                    .error_for_status()?
+                    .json()
+                    .await?;
+
+                let mut progressed = false;
+                for step in steps {
+                    if done_steps.contains(&step.id) {
+                        continue;
+                    }
+                    progressed = true;
+                    done_steps.insert(step.id.clone());
+
+                    let step_id = step.id.clone();
+                    let step_idx = step.idx;
+                    let step_name = step.name.clone();
 
                 let _ = client
                     .post(format!("{}/api/events", server_url))
@@ -161,16 +196,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .send()
                     .await;
 
-                let _ = client
-                    .post(format!("{}/api/events", server_url))
-                    .json(&CreateEventRequest {
-                        run_id: Some(run_id.clone()),
-                        agent_id: Some(agent.id.clone()),
-                        level: "info".to_string(),
-                        message: format!("step_done idx={}", step_idx),
-                    })
-                    .send()
-                    .await;
+                    let _ = client
+                        .post(format!("{}/api/events", server_url))
+                        .json(&CreateEventRequest {
+                            run_id: Some(run_id.clone()),
+                            agent_id: Some(agent.id.clone()),
+                            level: "info".to_string(),
+                            message: format!("step_done idx={}", step_idx),
+                        })
+                        .send()
+                        .await;
+                }
+
+                if !progressed {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             }
 
             tokio::time::sleep(std::time::Duration::from_millis(800)).await;

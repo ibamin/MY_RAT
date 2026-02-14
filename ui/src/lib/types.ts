@@ -41,6 +41,7 @@ export type ScenarioAssertionDef = {
 export type ScenarioStepDef = {
   step_id: string;
   name: string;
+  requires_choice_id?: string | null;
   actions: ScenarioActionDef[];
   choices: ScenarioChoiceDef[];
   assertions: ScenarioAssertionDef[];
