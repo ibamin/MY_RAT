@@ -3,13 +3,16 @@ import { getServerUrl } from './lib/api';
 import { AgentsPanel } from './panels/AgentsPanel';
 import { EventsPanel } from './panels/EventsPanel';
 import { FingerprintPanel } from './panels/FingerprintPanel';
+import { MissionsPanel } from './panels/MissionsPanel';
 import { RunsPanel } from './panels/RunsPanel';
 
-type View = 'agents' | 'runs' | 'events' | 'fingerprint';
+type View = 'missions' | 'agents' | 'runs' | 'events' | 'fingerprint';
 
 export default function App() {
-  const [view, setView] = useState<View>('agents');
+  const [view, setView] = useState<View>('missions');
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const title = useMemo(() => {
+    if (view === 'missions') return 'Missions';
     if (view === 'agents') return 'Agents';
     if (view === 'runs') return 'Runs';
     if (view === 'events') return 'Events';
@@ -25,6 +28,12 @@ export default function App() {
         </div>
 
         <nav className="nav">
+          <button
+            className={`navBtn ${view === 'missions' ? 'navBtnActive' : ''}`}
+            onClick={() => setView('missions')}
+          >
+            Missions
+          </button>
           <button
             className={`navBtn ${view === 'agents' ? 'navBtnActive' : ''}`}
             onClick={() => setView('agents')}
@@ -65,8 +74,18 @@ export default function App() {
           <div className="topbarMeta">v0.1 · local dashboard</div>
         </div>
 
+        {view === 'missions' ? (
+          <MissionsPanel
+            onQueuedRun={(runId) => {
+              setSelectedRunId(runId);
+              setView('runs');
+            }}
+          />
+        ) : null}
         {view === 'agents' ? <AgentsPanel /> : null}
-        {view === 'runs' ? <RunsPanel /> : null}
+        {view === 'runs' ? (
+          <RunsPanel selectedRunId={selectedRunId} onSelectRun={(runId) => setSelectedRunId(runId)} />
+        ) : null}
         {view === 'events' ? <EventsPanel /> : null}
         {view === 'fingerprint' ? <FingerprintPanel /> : null}
       </main>
