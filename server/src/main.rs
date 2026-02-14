@@ -2,6 +2,7 @@ mod db;
 mod fingerprint;
 mod handlers;
 mod models;
+mod scenarios;
 
 use axum::{
     Router,
@@ -14,6 +15,7 @@ use std::net::SocketAddr;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use scenarios::ScenarioCatalog;
 
 fn env_true(key: &str) -> bool {
     match std::env::var(key) {
@@ -35,7 +37,20 @@ async fn main() {
         .and_then(|p| fingerprint::FingerprintMatcher::load_from_json_path(&p).ok())
         .unwrap_or_else(fingerprint::FingerprintMatcher::empty);
 
-    let state = AppState { pool, matcher };
+    let scenarios_dir = std::env::var("SCENARIOS_PATH").unwrap_or_else(|_| "data/scenarios".to_string());
+    let scenarios = ScenarioCatalog::load_from_dir(&scenarios_dir)
+        .map_err(|e| {
+            eprintln!("Failed to load scenarios from {}: {}", scenarios_dir, e);
+            e
+        })
+        .ok()
+        .unwrap_or_else(ScenarioCatalog::empty);
+
+    let state = AppState {
+        pool,
+        matcher,
+        scenarios,
+    };
 
     let cors = if env_true("CORS_PERMISSIVE") {
         CorsLayer::permissive()
@@ -53,11 +68,29 @@ async fn main() {
     };
 
     let app = Router::new()
+        .route("/api/scenarios", get(handlers::list_scenarios))
+        .route(
+            "/api/scenarios/:scenario_id",
+            get(handlers::get_scenario),
+        )
         .route("/api/agents/register", post(handlers::register_agent))
         .route("/api/agents/list", get(handlers::list_agents))
         .route("/api/agents/:id/heartbeat", post(handlers::heartbeat))
         .route("/api/fingerprint/match", post(handlers::fingerprint_match))
-        .route("/api/runs", post(handlers::create_run))
+        .route("/api/runs", post(handlers::create_run).get(handlers::list_runs))
+        .route("/api/runs/:run_id", get(handlers::get_run))
+        .route(
+            "/api/runs/:run_id/operator-actions",
+            post(handlers::create_operator_action).get(handlers::list_operator_actions),
+        )
+        .route("/api/runs/:run_id/events", get(handlers::list_run_events))
+        .route("/api/runs/:run_id/steps", get(handlers::list_run_steps))
+        .route(
+            "/api/runs/:run_id/evidence",
+            get(handlers::list_run_evidence),
+        )
+        .route("/api/runs/:run_id/verdict", get(handlers::get_run_verdict))
+        .route("/api/evidence", post(handlers::create_evidence))
         .route(
             "/api/runs/pending/:agent_id",
             get(handlers::get_pending_runs),
