@@ -28,7 +28,8 @@ Prereqs:
 
 ```bash
 cd server
-set FINGERPRINT_RULES_PATH=server\data\fingerprint_rules.sample.json
+set FINGERPRINT_RULES_PATH=data\fingerprint_rules.sample.json
+set SCENARIOS_PATH=data\scenarios
 cargo run
 ```
 
@@ -49,7 +50,7 @@ set VITE_SERVER_URL=http://127.0.0.1:3000
 npm run dev
 ```
 
-Then queue a run in the UI and watch the Events stream.
+Then start a Mission in the UI and open Run Detail to see PASS/FAIL + evidence.
 
 ## Data Model (MVP)
 
@@ -60,10 +61,20 @@ Then queue a run in the UI and watch the Events stream.
 
 ## API Overview
 
+- `GET /api/scenarios` -> `[ScenarioMeta]`
+- `GET /api/scenarios/:scenario_id` -> `ScenarioDef`
 - `POST /api/agents/register` -> Agent JSON
 - `POST /api/agents/:id/heartbeat` -> 200
 - `GET /api/agents/list` -> `[Agent]`
-- `POST /api/runs` -> Run JSON
+- `GET /api/runs` -> `[Run]`
+- `POST /api/runs` -> Run JSON (accepts `scenario_id` or `test_id`)
+- `GET /api/runs/:run_id` -> Run JSON
+- `GET /api/runs/:run_id/steps` -> `[Step]`
+- `GET /api/runs/:run_id/events` -> `[Event]` (filtered)
+- `GET /api/runs/:run_id/evidence` -> `[Evidence]`
+- `GET /api/runs/:run_id/verdict` -> Run verdict view (step PASS/FAIL)
+- `POST /api/runs/:run_id/operator-actions` -> 200
+- `POST /api/evidence` -> Evidence JSON
 - `GET /api/runs/pending/:agent_id` -> `[Run]` (server marks pending -> dispatched)
 - `POST /api/runs/:run_id/result` -> 200
 - `POST /api/events` -> Event JSON
