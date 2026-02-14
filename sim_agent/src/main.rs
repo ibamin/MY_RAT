@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
 struct RegisterRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
     hostname: String,
     ip: String,
     os: String,
@@ -75,12 +77,27 @@ fn user() -> String {
         .unwrap_or_else(|_| "unknown".to_string())
 }
 
+fn read_text_file(path: &str) -> Option<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn write_text_file(path: &str, content: &str) {
+    let _ = std::fs::write(path, content);
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_url = env_or("SERVER_URL", "http://127.0.0.1:3000");
+    let agent_id_file = env_or("AGENT_ID_FILE", "sim_agent_id.txt");
     let client = reqwest::Client::new();
 
+    let persisted_agent_id = read_text_file(&agent_id_file);
+
     let reg = RegisterRequest {
+        id: persisted_agent_id,
         hostname: env_or("AGENT_HOSTNAME", &hostname()),
         ip: env_or("AGENT_IP", "127.0.0.1"),
         os: env_or("AGENT_OS", std::env::consts::OS),
@@ -97,19 +114,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .json()
         .await?;
 
+    write_text_file(&agent_id_file, &agent.id);
+
     loop {
         let _ = client
             .post(format!("{}/api/agents/{}/heartbeat", server_url, agent.id))
             .send()
             .await;
 
-        let pending: Vec<Run> = client
+        let pending_res = client
             .get(format!("{}/api/runs/pending/{}", server_url, agent.id))
             .send()
-            .await?
-            .error_for_status()?
-            .json()
             .await?;
+
+        if pending_res.status() == reqwest::StatusCode::FORBIDDEN {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            continue;
+        }
+
+        let pending: Vec<Run> = pending_res.error_for_status()?.json().await?;
 
         for run in pending {
             let run_id = run.id.clone();
