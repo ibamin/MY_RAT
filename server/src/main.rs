@@ -12,16 +12,71 @@ use handlers::AppState;
 use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderValue, Method};
 use std::net::SocketAddr;
+use std::process::Command;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use scenarios::ScenarioCatalog;
+use sqlx::SqlitePool;
 
 fn env_true(key: &str) -> bool {
     match std::env::var(key) {
         Ok(v) => matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"),
         Err(_) => false,
     }
+}
+
+fn launch_ui(server_url: &str) {
+    let ui_dir = std::env::var("UI_DIR").unwrap_or_else(|_| "../ui".to_string());
+    let shell = if cfg!(windows) { "cmd" } else { "sh" };
+    let shell_flag = if cfg!(windows) { "/C" } else { "-lc" };
+
+    let mut cmd = Command::new(shell);
+    cmd.arg(shell_flag)
+        .arg("npm run dev")
+        .current_dir(ui_dir)
+        .env("VITE_SERVER_URL", server_url)
+        .env("ELECTRON_RENDERER_URL", "http://127.0.0.1:5173");
+
+    let _ = cmd.spawn();
+}
+
+async fn spawn_status_ticker(pool: SqlitePool) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+
+            let agents_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agents")
+                .fetch_one(&pool)
+                .await
+                .unwrap_or(0);
+            let agents_online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agents WHERE status = 'online'")
+                .fetch_one(&pool)
+                .await
+                .unwrap_or(0);
+
+            let runs_pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM runs WHERE status = 'pending'")
+                .fetch_one(&pool)
+                .await
+                .unwrap_or(0);
+            let runs_dispatched: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM runs WHERE status = 'dispatched'")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap_or(0);
+            let runs_completed: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM runs WHERE status = 'completed'")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap_or(0);
+
+            println!(
+                "[console] agents {}/{} online | runs pending={} dispatched={} completed={}",
+                agents_online, agents_total, runs_pending, runs_dispatched, runs_completed
+            );
+        }
+    });
 }
 
 #[tokio::main]
@@ -51,6 +106,13 @@ async fn main() {
         matcher,
         scenarios,
     };
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let server_url = format!("http://{}", addr);
+    if env_true("LAUNCH_UI") {
+        launch_ui(&server_url);
+    }
+    spawn_status_ticker(state.pool.clone()).await;
 
     let cors = if env_true("CORS_PERMISSIVE") {
         CorsLayer::permissive()
@@ -105,7 +167,6 @@ async fn main() {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     println!("C2 Server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
