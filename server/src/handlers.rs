@@ -1,9 +1,11 @@
 use crate::fingerprint::FingerprintMatcher;
 use crate::scenarios::{ScenarioCatalog, ScenarioDef, ScenarioMeta};
 use crate::models::{
-    Agent, Assertion, CreateEvidenceRequest, CreateEventRequest, CreateRunRequest, Evidence, Event,
-    FingerprintMatchRequest, FingerprintMatchResponse, OperatorAction, OperatorActionRequest, Run,
-    Step, VerdictRow, RegisterRequest, UpdateRunResultRequest,
+    Agent, AgentTag, Assertion, CreateEvidenceRequest, CreateEventRequest,
+    CreateGroupRequest, CreateGroupRunsRequest, CreateGroupRunsResponse, CreateRunRequest, Evidence,
+    Event, FingerprintMatchRequest, FingerprintMatchResponse, Group, OperatorAction,
+    OperatorActionRequest, Run, SetAgentGroupRequest, SetAgentTagRequest, Step, VerdictRow,
+    RegisterRequest, UpdateRunResultRequest,
 };
 use axum::{
     Json,
@@ -46,6 +48,33 @@ async fn agent_exists(state: &AppState, agent_id: &str) -> Result<bool, (StatusC
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(row.is_some())
+}
+
+async fn get_agent(state: &AppState, agent_id: &str) -> Result<Option<Agent>, (StatusCode, String)> {
+    let agent = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE id = ?")
+        .bind(agent_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(agent)
+}
+
+async fn agent_is_approved(state: &AppState, agent_id: &str) -> Result<bool, (StatusCode, String)> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT approval_status FROM agents WHERE id = ?")
+        .bind(agent_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(row.map(|(s,)| s == "approved").unwrap_or(false))
+}
+
+async fn agent_is_blocked(state: &AppState, agent_id: &str) -> Result<bool, (StatusCode, String)> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT approval_status FROM agents WHERE id = ?")
+        .bind(agent_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(row.map(|(s,)| s == "blocked").unwrap_or(false))
 }
 
 async fn run_exists(state: &AppState, run_id: &str) -> Result<bool, (StatusCode, String)> {
@@ -178,9 +207,63 @@ pub async fn register_agent(
 ) -> Result<Json<Agent>, (StatusCode, String)> {
     let now = Utc::now();
 
-    let id = uuid::Uuid::new_v4().to_string();
     let last_seen = now.to_rfc3339();
+    let requested_id = payload.id.as_deref().unwrap_or("").trim();
 
+    if !requested_id.is_empty() {
+        if agent_exists(&state, requested_id).await? {
+            sqlx::query(
+                "UPDATE agents SET hostname = ?, ip = ?, os = ?, arch = ?, user = ?, last_seen = ?, status = 'online' WHERE id = ?",
+            )
+            .bind(&payload.hostname)
+            .bind(&payload.ip)
+            .bind(&payload.os)
+            .bind(&payload.arch)
+            .bind(&payload.user)
+            .bind(&last_seen)
+            .bind(requested_id)
+            .execute(&state.pool)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+            let agent = get_agent(&state, requested_id)
+                .await?
+                .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Agent missing after update".to_string()))?;
+            return Ok(Json(agent));
+        }
+
+        let agent = Agent {
+            id: requested_id.to_string(),
+            hostname: payload.hostname,
+            ip: payload.ip,
+            os: payload.os,
+            arch: payload.arch,
+            user: payload.user,
+            last_seen,
+            status: "online".to_string(),
+            approval_status: "pending".to_string(),
+        };
+
+        sqlx::query(
+            "INSERT INTO agents (id, hostname, ip, os, arch, user, last_seen, status, approval_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&agent.id)
+        .bind(&agent.hostname)
+        .bind(&agent.ip)
+        .bind(&agent.os)
+        .bind(&agent.arch)
+        .bind(&agent.user)
+        .bind(&agent.last_seen)
+        .bind(&agent.status)
+        .bind(&agent.approval_status)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        return Ok(Json(agent));
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
     let agent = Agent {
         id,
         hostname: payload.hostname,
@@ -190,11 +273,11 @@ pub async fn register_agent(
         user: payload.user,
         last_seen,
         status: "online".to_string(),
+        approval_status: "pending".to_string(),
     };
 
     sqlx::query(
-        "INSERT INTO agents (id, hostname, ip, os, arch, user, last_seen, status) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO agents (id, hostname, ip, os, arch, user, last_seen, status, approval_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&agent.id)
     .bind(&agent.hostname)
@@ -204,6 +287,7 @@ pub async fn register_agent(
     .bind(&agent.user)
     .bind(&agent.last_seen)
     .bind(&agent.status)
+    .bind(&agent.approval_status)
     .execute(&state.pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -215,6 +299,9 @@ pub async fn heartbeat(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    if agent_is_blocked(&state, &id).await? {
+        return Err((StatusCode::FORBIDDEN, "Agent is blocked".to_string()));
+    }
     let now = Utc::now().to_rfc3339();
     let res = sqlx::query("UPDATE agents SET last_seen = ?, status = 'online' WHERE id = ?")
         .bind(now)
@@ -239,6 +326,327 @@ pub async fn list_agents(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(agents))
+}
+
+pub async fn list_pending_agents(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<Agent>>, (StatusCode, String)> {
+    let agents = sqlx::query_as::<_, Agent>(
+        "SELECT * FROM agents WHERE approval_status = 'pending' ORDER BY last_seen DESC",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(agents))
+}
+
+pub async fn approve_agent(
+    State(state): State<AppState>,
+    Path(agent_id): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let res = sqlx::query("UPDATE agents SET approval_status = 'approved' WHERE id = ?")
+        .bind(&agent_id)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if res.rows_affected() == 0 {
+        return Err((StatusCode::NOT_FOUND, "Agent not found".to_string()));
+    }
+    Ok(StatusCode::OK)
+}
+
+pub async fn block_agent(
+    State(state): State<AppState>,
+    Path(agent_id): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let res = sqlx::query(
+        "UPDATE agents SET approval_status = 'blocked', status = 'blocked' WHERE id = ?",
+    )
+    .bind(&agent_id)
+    .execute(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if res.rows_affected() == 0 {
+        return Err((StatusCode::NOT_FOUND, "Agent not found".to_string()));
+    }
+    Ok(StatusCode::OK)
+}
+
+pub async fn list_agent_runs(
+    State(state): State<AppState>,
+    Path(agent_id): Path<String>,
+) -> Result<Json<Vec<Run>>, (StatusCode, String)> {
+    if !agent_exists(&state, &agent_id).await? {
+        return Err((StatusCode::NOT_FOUND, "Agent not found".to_string()));
+    }
+    let runs = sqlx::query_as::<_, Run>(
+        "SELECT * FROM runs WHERE agent_id = ? ORDER BY created_at DESC LIMIT 200",
+    )
+    .bind(&agent_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(runs))
+}
+
+pub async fn list_groups(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<Group>>, (StatusCode, String)> {
+    let items = sqlx::query_as::<_, Group>("SELECT * FROM groups ORDER BY created_at DESC")
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(items))
+}
+
+pub async fn create_group(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateGroupRequest>,
+) -> Result<Json<Group>, (StatusCode, String)> {
+    if payload.name.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "name is required".to_string()));
+    }
+
+    let group = Group {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: payload.name.trim().to_string(),
+        created_at: Utc::now().to_rfc3339(),
+    };
+
+    sqlx::query("INSERT INTO groups (id, name, created_at) VALUES (?, ?, ?)")
+        .bind(&group.id)
+        .bind(&group.name)
+        .bind(&group.created_at)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(group))
+}
+
+pub async fn assign_agent_to_group(
+    State(state): State<AppState>,
+    Path(group_id): Path<String>,
+    Json(payload): Json<SetAgentGroupRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    if !agent_exists(&state, &payload.agent_id).await? {
+        return Err((StatusCode::NOT_FOUND, "Agent not found".to_string()));
+    }
+    let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM groups WHERE id = ?")
+        .bind(&group_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if exists == 0 {
+        return Err((StatusCode::NOT_FOUND, "Group not found".to_string()));
+    }
+
+    let created_at = Utc::now().to_rfc3339();
+    sqlx::query(
+        "INSERT OR IGNORE INTO agent_groups (agent_id, group_id, created_at) VALUES (?, ?, ?)",
+    )
+    .bind(&payload.agent_id)
+    .bind(&group_id)
+    .bind(&created_at)
+    .execute(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(StatusCode::OK)
+}
+
+pub async fn unassign_agent_from_group(
+    State(state): State<AppState>,
+    Path(group_id): Path<String>,
+    Json(payload): Json<SetAgentGroupRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    sqlx::query("DELETE FROM agent_groups WHERE agent_id = ? AND group_id = ?")
+        .bind(&payload.agent_id)
+        .bind(&group_id)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(StatusCode::OK)
+}
+
+pub async fn list_group_agents(
+    State(state): State<AppState>,
+    Path(group_id): Path<String>,
+) -> Result<Json<Vec<Agent>>, (StatusCode, String)> {
+    let agents = sqlx::query_as::<_, Agent>(
+        "SELECT a.* FROM agents a JOIN agent_groups ag ON ag.agent_id = a.id WHERE ag.group_id = ? ORDER BY a.hostname ASC",
+    )
+    .bind(&group_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(agents))
+}
+
+pub async fn create_group_runs(
+    State(state): State<AppState>,
+    Path(group_id): Path<String>,
+    Json(payload): Json<CreateGroupRunsRequest>,
+) -> Result<Json<CreateGroupRunsResponse>, (StatusCode, String)> {
+    let scenario = match (&payload.scenario_id, &payload.test_id) {
+        (Some(scenario_id), _) => state
+            .scenarios
+            .get_by_id(scenario_id)
+            .ok_or((StatusCode::NOT_FOUND, "Scenario not found".to_string()))?,
+        (None, Some(test_id)) => state
+            .scenarios
+            .get_by_test_id(test_id)
+            .ok_or((StatusCode::NOT_FOUND, "Scenario not found".to_string()))?,
+        (None, None) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "scenario_id or test_id is required".to_string(),
+            ));
+        }
+    };
+
+    let group_exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM groups WHERE id = ?")
+        .bind(&group_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if group_exists == 0 {
+        return Err((StatusCode::NOT_FOUND, "Group not found".to_string()));
+    }
+
+    let agent_ids: Vec<String> = sqlx::query_scalar(
+        "SELECT a.id FROM agents a JOIN agent_groups ag ON ag.agent_id = a.id WHERE ag.group_id = ? AND a.approval_status = 'approved' ORDER BY a.hostname ASC",
+    )
+    .bind(&group_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if agent_ids.is_empty() {
+        return Ok(Json(CreateGroupRunsResponse { runs: Vec::new() }));
+    }
+
+    let mut out = Vec::with_capacity(agent_ids.len());
+    for agent_id in agent_ids {
+        let now = Utc::now().to_rfc3339();
+        let run = Run {
+            id: uuid::Uuid::new_v4().to_string(),
+            agent_id,
+            scenario_id: Some(scenario.scenario_id.clone()),
+            test_id: scenario.test_id.clone(),
+            params_json: payload.params_json.clone(),
+            status: "pending".to_string(),
+            result_json: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        sqlx::query(
+            "INSERT INTO runs (id, agent_id, scenario_id, test_id, params_json, status, result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&run.id)
+        .bind(&run.agent_id)
+        .bind(&run.scenario_id)
+        .bind(&run.test_id)
+        .bind(&run.params_json)
+        .bind(&run.status)
+        .bind(&run.result_json)
+        .bind(&run.created_at)
+        .bind(&run.updated_at)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        for (idx, s) in scenario.steps.iter().enumerate() {
+            if s.requires_choice_id.is_some() {
+                continue;
+            }
+            insert_step_plan(&state, &run.id, idx as i64, &s.step_id, &s.name, &s.assertions)
+                .await?;
+        }
+
+        out.push(run);
+    }
+
+    Ok(Json(CreateGroupRunsResponse { runs: out }))
+}
+
+pub async fn list_agent_groups(
+    State(state): State<AppState>,
+    Path(agent_id): Path<String>,
+) -> Result<Json<Vec<Group>>, (StatusCode, String)> {
+    if !agent_exists(&state, &agent_id).await? {
+        return Err((StatusCode::NOT_FOUND, "Agent not found".to_string()));
+    }
+    let groups = sqlx::query_as::<_, Group>(
+        "SELECT g.* FROM groups g JOIN agent_groups ag ON ag.group_id = g.id WHERE ag.agent_id = ? ORDER BY g.name ASC",
+    )
+    .bind(&agent_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(groups))
+}
+
+pub async fn list_agent_tags(
+    State(state): State<AppState>,
+    Path(agent_id): Path<String>,
+) -> Result<Json<Vec<AgentTag>>, (StatusCode, String)> {
+    if !agent_exists(&state, &agent_id).await? {
+        return Err((StatusCode::NOT_FOUND, "Agent not found".to_string()));
+    }
+    let tags = sqlx::query_as::<_, AgentTag>(
+        "SELECT * FROM agent_tags WHERE agent_id = ? ORDER BY tag ASC",
+    )
+    .bind(&agent_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(tags))
+}
+
+pub async fn add_agent_tag(
+    State(state): State<AppState>,
+    Path(agent_id): Path<String>,
+    Json(payload): Json<SetAgentTagRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    if !agent_exists(&state, &agent_id).await? {
+        return Err((StatusCode::NOT_FOUND, "Agent not found".to_string()));
+    }
+    if payload.tag.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "tag is required".to_string()));
+    }
+    let created_at = Utc::now().to_rfc3339();
+    sqlx::query(
+        "INSERT OR IGNORE INTO agent_tags (agent_id, tag, created_at) VALUES (?, ?, ?)",
+    )
+    .bind(&agent_id)
+    .bind(payload.tag.trim())
+    .bind(&created_at)
+    .execute(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(StatusCode::OK)
+}
+
+pub async fn remove_agent_tag(
+    State(state): State<AppState>,
+    Path(agent_id): Path<String>,
+    Json(payload): Json<SetAgentTagRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    if payload.tag.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "tag is required".to_string()));
+    }
+    sqlx::query("DELETE FROM agent_tags WHERE agent_id = ? AND tag = ?")
+        .bind(&agent_id)
+        .bind(payload.tag.trim())
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(StatusCode::OK)
 }
 
 pub async fn fingerprint_match(
@@ -373,6 +781,12 @@ pub async fn create_run(
 ) -> Result<Json<Run>, (StatusCode, String)> {
     if !agent_exists(&state, &payload.agent_id).await? {
         return Err((StatusCode::NOT_FOUND, "Agent not found".to_string()));
+    }
+    if !agent_is_approved(&state, &payload.agent_id).await? {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Agent not approved".to_string(),
+        ));
     }
 
     let scenario = match (&payload.scenario_id, &payload.test_id) {
@@ -543,6 +957,12 @@ pub async fn get_pending_runs(
 ) -> Result<Json<Vec<Run>>, (StatusCode, String)> {
     if !agent_exists(&state, &agent_id).await? {
         return Err((StatusCode::NOT_FOUND, "Agent not found".to_string()));
+    }
+    if !agent_is_approved(&state, &agent_id).await? {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Agent not approved".to_string(),
+        ));
     }
 
     let mut tx = state

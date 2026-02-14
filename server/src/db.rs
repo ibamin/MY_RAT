@@ -25,11 +25,25 @@ pub async fn init_db() -> Result<SqlitePool, sqlx::Error> {
             arch TEXT NOT NULL,
             user TEXT NOT NULL,
             last_seen TEXT NOT NULL,
-            status TEXT NOT NULL
+            status TEXT NOT NULL,
+            approval_status TEXT NOT NULL
         )",
     )
     .execute(&pool)
     .await?;
+
+    if let Err(e) = sqlx::query("ALTER TABLE agents ADD COLUMN approval_status TEXT")
+        .execute(&pool)
+        .await
+    {
+        if !is_duplicate_column_error(&e) {
+            return Err(e);
+        }
+    }
+
+    let _ = sqlx::query("UPDATE agents SET approval_status = 'approved' WHERE approval_status IS NULL")
+        .execute(&pool)
+        .await;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS runs (
@@ -161,6 +175,38 @@ pub async fn init_db() -> Result<SqlitePool, sqlx::Error> {
             choice_id TEXT,
             note TEXT,
             ts TEXT NOT NULL
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS groups (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS agent_groups (
+            agent_id TEXT NOT NULL,
+            group_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (agent_id, group_id)
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS agent_tags (
+            agent_id TEXT NOT NULL,
+            tag TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (agent_id, tag)
         )",
     )
     .execute(&pool)

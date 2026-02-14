@@ -137,7 +137,37 @@ async fn main() {
         )
         .route("/api/agents/register", post(handlers::register_agent))
         .route("/api/agents/list", get(handlers::list_agents))
+        .route("/api/agents/pending", get(handlers::list_pending_agents))
+        .route("/api/agents/:id/approve", post(handlers::approve_agent))
+        .route("/api/agents/:id/block", post(handlers::block_agent))
         .route("/api/agents/:id/heartbeat", post(handlers::heartbeat))
+        .route("/api/agents/:id/runs", get(handlers::list_agent_runs))
+        .route("/api/agents/:id/groups", get(handlers::list_agent_groups))
+        .route(
+            "/api/agents/:id/tags",
+            get(handlers::list_agent_tags).post(handlers::add_agent_tag),
+        )
+        .route(
+            "/api/agents/:id/tags/remove",
+            post(handlers::remove_agent_tag),
+        )
+        .route("/api/groups", get(handlers::list_groups).post(handlers::create_group))
+        .route(
+            "/api/groups/:group_id/agents",
+            get(handlers::list_group_agents),
+        )
+        .route(
+            "/api/groups/:group_id/assign",
+            post(handlers::assign_agent_to_group),
+        )
+        .route(
+            "/api/groups/:group_id/unassign",
+            post(handlers::unassign_agent_from_group),
+        )
+        .route(
+            "/api/groups/:group_id/runs",
+            post(handlers::create_group_runs),
+        )
         .route("/api/fingerprint/match", post(handlers::fingerprint_match))
         .route("/api/runs", post(handlers::create_run).get(handlers::list_runs))
         .route("/api/runs/:run_id", get(handlers::get_run))

@@ -11,15 +11,65 @@ pub struct Agent {
     pub user: String,
     pub last_seen: String,
     pub status: String,
+    pub approval_status: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
+    pub id: Option<String>,
     pub hostname: String,
     pub ip: String,
     pub os: String,
     pub arch: String,
     pub user: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct Group {
+    pub id: String,
+    pub name: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateGroupRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct AgentGroup {
+    pub agent_id: String,
+    pub group_id: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetAgentGroupRequest {
+    pub agent_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct AgentTag {
+    pub agent_id: String,
+    pub tag: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetAgentTagRequest {
+    pub tag: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateGroupRunsRequest {
+    pub scenario_id: Option<String>,
+    pub test_id: Option<String>,
+    pub params_json: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateGroupRunsResponse {
+    pub runs: Vec<Run>,
 }
 
 #[derive(Debug, Deserialize)]
