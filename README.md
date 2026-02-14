@@ -30,6 +30,7 @@ Prereqs:
 cd server
 set FINGERPRINT_RULES_PATH=data\fingerprint_rules.sample.json
 set SCENARIOS_PATH=data\scenarios
+set LAUNCH_UI=1
 cargo run
 ```
 
