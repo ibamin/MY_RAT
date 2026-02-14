@@ -1,0 +1,14 @@
+# Rust
+**/target/
+
+# Node
+**/node_modules/
+**/dist/
+
+# Local artifacts
+server/red-sim.db
+**/out.jsonl
+
+# OS
+.DS_Store
+Thumbs.db
