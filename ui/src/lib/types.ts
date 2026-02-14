@@ -7,6 +7,19 @@ export type Agent = {
   user: string;
   last_seen: string;
   status: string;
+  approval_status: string;
+};
+
+export type Group = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+export type AgentTag = {
+  agent_id: string;
+  tag: string;
+  created_at: string;
 };
 
 export type ScenarioMeta = {

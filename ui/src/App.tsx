@@ -3,10 +3,11 @@ import { getServerUrl } from './lib/api';
 import { AgentsPanel } from './panels/AgentsPanel';
 import { EventsPanel } from './panels/EventsPanel';
 import { FingerprintPanel } from './panels/FingerprintPanel';
+import { GroupsPanel } from './panels/GroupsPanel';
 import { MissionsPanel } from './panels/MissionsPanel';
 import { RunsPanel } from './panels/RunsPanel';
 
-type View = 'missions' | 'agents' | 'runs' | 'events' | 'fingerprint';
+type View = 'missions' | 'agents' | 'groups' | 'runs' | 'events' | 'fingerprint';
 
 export default function App() {
   const [view, setView] = useState<View>('missions');
@@ -14,6 +15,7 @@ export default function App() {
   const title = useMemo(() => {
     if (view === 'missions') return 'Missions';
     if (view === 'agents') return 'Agents';
+    if (view === 'groups') return 'Groups';
     if (view === 'runs') return 'Runs';
     if (view === 'events') return 'Events';
     return 'Fingerprint';
@@ -39,6 +41,12 @@ export default function App() {
             onClick={() => setView('agents')}
           >
             Agents
+          </button>
+          <button
+            className={`navBtn ${view === 'groups' ? 'navBtnActive' : ''}`}
+            onClick={() => setView('groups')}
+          >
+            Groups
           </button>
           <button
             className={`navBtn ${view === 'runs' ? 'navBtnActive' : ''}`}
@@ -83,6 +91,7 @@ export default function App() {
           />
         ) : null}
         {view === 'agents' ? <AgentsPanel /> : null}
+        {view === 'groups' ? <GroupsPanel /> : null}
         {view === 'runs' ? (
           <RunsPanel selectedRunId={selectedRunId} onSelectRun={(runId) => setSelectedRunId(runId)} />
         ) : null}

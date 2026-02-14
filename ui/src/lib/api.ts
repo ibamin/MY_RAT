@@ -1,7 +1,9 @@
 import type {
   Agent,
+  AgentTag,
   Event,
   FingerprintCandidate,
+  Group,
   Run,
   ScenarioMeta,
   ScenarioDef,
@@ -34,6 +36,86 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function listAgents(): Promise<Agent[]> {
   return http<Agent[]>('/api/agents/list');
+}
+
+export async function listPendingAgents(): Promise<Agent[]> {
+  return http<Agent[]>('/api/agents/pending');
+}
+
+export async function approveAgent(agentId: string): Promise<void> {
+  await http<unknown>(`/api/agents/${encodeURIComponent(agentId)}/approve`, { method: 'POST' });
+}
+
+export async function blockAgent(agentId: string): Promise<void> {
+  await http<unknown>(`/api/agents/${encodeURIComponent(agentId)}/block`, { method: 'POST' });
+}
+
+export async function listAgentRuns(agentId: string): Promise<Run[]> {
+  return http<Run[]>(`/api/agents/${encodeURIComponent(agentId)}/runs`);
+}
+
+export async function listAgentGroups(agentId: string): Promise<Group[]> {
+  return http<Group[]>(`/api/agents/${encodeURIComponent(agentId)}/groups`);
+}
+
+export async function listAgentTags(agentId: string): Promise<AgentTag[]> {
+  return http<AgentTag[]>(`/api/agents/${encodeURIComponent(agentId)}/tags`);
+}
+
+export async function addAgentTag(agentId: string, tag: string): Promise<void> {
+  await http<unknown>(`/api/agents/${encodeURIComponent(agentId)}/tags`, {
+    method: 'POST',
+    body: JSON.stringify({ tag }),
+  });
+}
+
+export async function removeAgentTag(agentId: string, tag: string): Promise<void> {
+  await http<unknown>(`/api/agents/${encodeURIComponent(agentId)}/tags/remove`, {
+    method: 'POST',
+    body: JSON.stringify({ tag }),
+  });
+}
+
+export async function listGroups(): Promise<Group[]> {
+  return http<Group[]>('/api/groups');
+}
+
+export async function createGroup(name: string): Promise<Group> {
+  return http<Group>('/api/groups', { method: 'POST', body: JSON.stringify({ name }) });
+}
+
+export async function listGroupAgents(groupId: string): Promise<Agent[]> {
+  return http<Agent[]>(`/api/groups/${encodeURIComponent(groupId)}/agents`);
+}
+
+export async function assignAgentToGroup(groupId: string, agentId: string): Promise<void> {
+  await http<unknown>(`/api/groups/${encodeURIComponent(groupId)}/assign`, {
+    method: 'POST',
+    body: JSON.stringify({ agent_id: agentId }),
+  });
+}
+
+export async function unassignAgentFromGroup(groupId: string, agentId: string): Promise<void> {
+  await http<unknown>(`/api/groups/${encodeURIComponent(groupId)}/unassign`, {
+    method: 'POST',
+    body: JSON.stringify({ agent_id: agentId }),
+  });
+}
+
+export async function createGroupRuns(input: {
+  group_id: string;
+  scenario_id?: string | null;
+  test_id?: string | null;
+  params_json?: string | null;
+}): Promise<{ runs: Run[] }> {
+  return http<{ runs: Run[] }>(`/api/groups/${encodeURIComponent(input.group_id)}/runs`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scenario_id: input.scenario_id ?? null,
+      test_id: input.test_id ?? null,
+      params_json: input.params_json ?? null,
+    }),
+  });
 }
 
 export async function listScenarios(): Promise<ScenarioMeta[]> {
