@@ -30,6 +30,8 @@ pub struct ScenarioStepDef {
     pub step_id: String,
     pub name: String,
     #[serde(default)]
+    pub requires_choice_id: Option<String>,
+    #[serde(default)]
     pub actions: Vec<ScenarioActionDef>,
     #[serde(default)]
     pub choices: Vec<ScenarioChoiceDef>,

@@ -9,6 +9,7 @@
     {
       "step_id": "s1",
       "name": "Initial Access (Simulated)",
+      "requires_choice_id": null,
       "actions": [
         { "action_id": "a1", "title": "Simulate access", "kind": "emit_events" }
       ],
@@ -28,8 +29,9 @@
       ]
     },
     {
-      "step_id": "s2",
-      "name": "Execution (Controlled Effect)",
+      "step_id": "s2-stealth",
+      "name": "Execution (Stealth)",
+      "requires_choice_id": "c1",
       "actions": [
         { "action_id": "a2", "title": "Simulate execution", "kind": "emit_events" }
       ],
@@ -37,6 +39,25 @@
       "assertions": [
         {
           "assertion_id": "as2",
+          "description": "telemetry evidence attached",
+          "required": true,
+          "type": "evidence_kind",
+          "kind": "telemetry",
+          "contains": null
+        }
+      ]
+    },
+    {
+      "step_id": "s2-loud",
+      "name": "Execution (Loud)",
+      "requires_choice_id": "c2",
+      "actions": [
+        { "action_id": "a2", "title": "Simulate execution", "kind": "emit_events" }
+      ],
+      "choices": [],
+      "assertions": [
+        {
+          "assertion_id": "as3",
           "description": "telemetry evidence attached",
           "required": true,
           "type": "evidence_kind",

@@ -74,6 +74,7 @@ pub async fn init_db() -> Result<SqlitePool, sqlx::Error> {
         "CREATE TABLE IF NOT EXISTS steps (
             id TEXT PRIMARY KEY,
             run_id TEXT NOT NULL,
+            scenario_step_id TEXT,
             idx INTEGER NOT NULL,
             name TEXT NOT NULL,
             status TEXT NOT NULL,
@@ -83,6 +84,15 @@ pub async fn init_db() -> Result<SqlitePool, sqlx::Error> {
     )
     .execute(&pool)
     .await?;
+
+    if let Err(e) = sqlx::query("ALTER TABLE steps ADD COLUMN scenario_step_id TEXT")
+        .execute(&pool)
+        .await
+    {
+        if !is_duplicate_column_error(&e) {
+            return Err(e);
+        }
+    }
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS evidence (

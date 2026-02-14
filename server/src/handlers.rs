@@ -12,7 +12,7 @@ use axum::{
 };
 use chrono::Utc;
 use sha2::Digest;
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 use serde::Serialize;
 
 #[derive(Clone)]
@@ -64,6 +64,112 @@ async fn step_exists(state: &AppState, step_id: &str) -> Result<bool, (StatusCod
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(row.is_some())
+}
+
+async fn step_exists_by_scenario_step_id(
+    state: &AppState,
+    run_id: &str,
+    scenario_step_id: &str,
+) -> Result<bool, (StatusCode, String)> {
+    let row = sqlx::query("SELECT 1 FROM steps WHERE run_id = ? AND scenario_step_id = ?")
+        .bind(run_id)
+        .bind(scenario_step_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(row.is_some())
+}
+
+async fn insert_step_plan(
+    state: &AppState,
+    run_id: &str,
+    idx: i64,
+    scenario_step_id: &str,
+    name: &str,
+    assertions: &[crate::scenarios::ScenarioAssertionDef],
+) -> Result<(), (StatusCode, String)> {
+    let step_id = uuid::Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO steps (id, run_id, scenario_step_id, idx, name, status, started_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(&step_id)
+    .bind(run_id)
+    .bind(scenario_step_id)
+    .bind(idx)
+    .bind(name)
+    .bind("PENDING")
+    .bind(Option::<String>::None)
+    .bind(Option::<String>::None)
+    .execute(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    for a in assertions {
+        let assertion_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO assertions (id, run_id, step_id, description, required, rule_type, kind, contains, status, evidence_refs_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&assertion_id)
+        .bind(run_id)
+        .bind(&step_id)
+        .bind(&a.description)
+        .bind(a.required)
+        .bind(&a.type_)
+        .bind(&a.kind)
+        .bind(&a.contains)
+        .bind("PENDING")
+        .bind(Option::<String>::None)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+
+    let verdict_id = uuid::Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO verdicts (id, run_id, step_id, verdict, reason_code, summary, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(&verdict_id)
+    .bind(run_id)
+    .bind(&step_id)
+    .bind("IN_PROGRESS")
+    .bind(Option::<String>::None)
+    .bind(Option::<String>::None)
+    .bind(Utc::now().to_rfc3339())
+    .execute(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(())
+}
+
+async fn ensure_unlocked_steps(
+    state: &AppState,
+    run: &Run,
+    scenario: &ScenarioDef,
+) -> Result<(), (StatusCode, String)> {
+    let selected_choices: Vec<String> = sqlx::query(
+        "SELECT choice_id FROM operator_actions WHERE run_id = ? AND type = 'select_choice' AND choice_id IS NOT NULL ORDER BY ts ASC",
+    )
+    .bind(&run.id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .into_iter()
+    .filter_map(|r| r.get::<Option<String>, _>(0))
+    .collect();
+
+    for (idx, s) in scenario.steps.iter().enumerate() {
+        let req = s.requires_choice_id.as_deref().unwrap_or("");
+        if !req.is_empty() && !selected_choices.iter().any(|c| c == req) {
+            continue;
+        }
+        if step_exists_by_scenario_step_id(state, &run.id, &s.step_id).await? {
+            continue;
+        }
+        insert_step_plan(state, &run.id, idx as i64, &s.step_id, &s.name, &s.assertions).await?;
+    }
+
+    Ok(())
 }
 
 pub async fn register_agent(
@@ -171,9 +277,23 @@ pub async fn list_run_steps(
     State(state): State<AppState>,
     Path(run_id): Path<String>,
 ) -> Result<Json<Vec<Step>>, (StatusCode, String)> {
-    if !run_exists(&state, &run_id).await? {
-        return Err((StatusCode::NOT_FOUND, "Run not found".to_string()));
-    }
+    let run = sqlx::query_as::<_, Run>("SELECT * FROM runs WHERE id = ?")
+        .bind(&run_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Run not found".to_string()))?;
+
+    let scenario_id = run
+        .scenario_id
+        .clone()
+        .ok_or((StatusCode::BAD_REQUEST, "run missing scenario_id".to_string()))?;
+    let scenario = state
+        .scenarios
+        .get_by_id(&scenario_id)
+        .ok_or((StatusCode::NOT_FOUND, "Scenario not found".to_string()))?;
+
+    ensure_unlocked_steps(&state, &run, &scenario).await?;
     let steps = sqlx::query_as::<_, Step>("SELECT * FROM steps WHERE run_id = ? ORDER BY idx ASC")
         .bind(&run_id)
         .fetch_all(&state.pool)
@@ -302,55 +422,10 @@ pub async fn create_run(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     for (idx, s) in scenario.steps.iter().enumerate() {
-        let step_id = uuid::Uuid::new_v4().to_string();
-        sqlx::query(
-            "INSERT INTO steps (id, run_id, idx, name, status, started_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(&step_id)
-        .bind(&run.id)
-        .bind(idx as i64)
-        .bind(&s.name)
-        .bind("PENDING")
-        .bind(Option::<String>::None)
-        .bind(Option::<String>::None)
-        .execute(&state.pool)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-        for a in &s.assertions {
-            let assertion_id = uuid::Uuid::new_v4().to_string();
-            sqlx::query(
-                "INSERT INTO assertions (id, run_id, step_id, description, required, rule_type, kind, contains, status, evidence_refs_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            )
-            .bind(&assertion_id)
-            .bind(&run.id)
-            .bind(&step_id)
-            .bind(&a.description)
-            .bind(a.required)
-            .bind(&a.type_)
-            .bind(&a.kind)
-            .bind(&a.contains)
-            .bind("PENDING")
-            .bind(Option::<String>::None)
-            .execute(&state.pool)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        if s.requires_choice_id.is_some() {
+            continue;
         }
-
-        let verdict_id = uuid::Uuid::new_v4().to_string();
-        sqlx::query(
-            "INSERT INTO verdicts (id, run_id, step_id, verdict, reason_code, summary, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(&verdict_id)
-        .bind(&run.id)
-        .bind(&step_id)
-        .bind("IN_PROGRESS")
-        .bind(Option::<String>::None)
-        .bind(Option::<String>::None)
-        .bind(Utc::now().to_rfc3339())
-        .execute(&state.pool)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        insert_step_plan(&state, &run.id, idx as i64, &s.step_id, &s.name, &s.assertions).await?;
     }
 
     Ok(Json(run))
@@ -441,6 +516,7 @@ pub async fn create_operator_action(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    ensure_unlocked_steps(&state, &run, &scenario).await?;
     Ok(StatusCode::OK)
 }
 
