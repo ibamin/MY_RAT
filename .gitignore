@@ -9,6 +9,11 @@
 server/red-sim.db
 **/out.jsonl
 
+# Tool artifacts
+.claude/
+**/.omc/
+nul
+
 # OS
 .DS_Store
 Thumbs.db
