@@ -1,57 +1,56 @@
 # Agent
 
-Rust prototype crate (Windows-focused) that contains:
+Rust agent crate with real OS execution capabilities for the BAS platform.
 
-- Windows API / COM automation helpers
-- LDAP (Active Directory) query helpers
+## Executors
 
-This crate is **not used** by the current BAS MVP pipeline (`server/` + `sim_agent/` + `ui/`).
+### Windows
+- `COM` — COM automation (WScript.Shell, MMC20)
+- `Syscall` — Direct Win32 process creation (CreateProcessW)
+- `PowerShell` — PowerShell command execution
+- `Registry` — Windows registry manipulation
+- `Fileless` — In-memory execution via CreateThread
 
-## Dependencies
+### Linux
+- `Memfd` — Memory-only execution via memfd_create
+- `RawSyscall` — Direct syscall invocation
+- `Shell` — /bin/sh command execution
 
-From `Agent/Cargo.toml`:
+## Scanners
+- **Port Scanner** — TCP connect scan (top ports)
+- **Banner Grabber** — Service banner collection
+- **AD/LDAP** — Active Directory reconnaissance
 
-- `windows` (Win32 APIs, COM, Shell, Threading, etc.)
-- `ldap3` (LDAP client)
-- `tokio` (async runtime)
-- `regex`
+## Evasion
+- Anti-analysis detection (debugger, VM, sandbox)
+- String obfuscation (compile-time XOR)
 
-## Code Layout
+## Transport
+- HTTP transport with server API integration
+- Server-driven step polling: agent fetches READY steps, executes, calls complete_step
 
-- `Agent/src/main.rs`
-  - Local test harness / demo code invoking modules.
-  - Contains placeholder credential strings for demonstration.
-- `Agent/src/Module/`
-  - `Executor/`
-    - `COM.rs`: COM automation wrapper.
-    - `SYSCALL.rs`: direct Win32 process creation utilities.
-  - `Scanner/`
-    - `Active_Directory.rs`: LDAP/AD query functions.
+## Build
+
+Agent binary supports compile-time injection via environment variables:
+- `AGENT_GUID` — Unique agent identifier
+- `SERVER_URL` — C2 server URL (default: http://127.0.0.1:3000)
+- `SLEEP_SEC` — Poll interval in seconds (default: 5)
+
+```bash
+cd Agent
+set AGENT_GUID=my-agent-01
+set SERVER_URL=http://127.0.0.1:3000
+cargo build --release
+```
 
 ## Run / Test
 
-Build:
-```bash
-cd Agent
-cargo build
-```
-
-Run (local demo harness):
 ```bash
 cargo run
-```
-
-Tests:
-```bash
 cargo test
+cargo clippy -- -D warnings
 ```
-
-Notes:
-- Most functionality is Windows-specific.
-- AD-related tests require a correctly configured AD/LDAP environment.
-- Do not commit real credentials. Replace placeholders with environment-based configuration before any real use.
 
 ## Safety Note
 
-This repository also contains a BAS MVP. The `Agent/` crate includes powerful OS/LDAP automation prototypes.
-Keep it isolated from production systems and avoid distributing binaries without strict controls.
+This crate contains real OS execution capabilities. Keep it isolated from production systems.
