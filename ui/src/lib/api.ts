@@ -1,6 +1,11 @@
 import type {
+  AchievementCheckResponse,
+  AchievementStatus,
   Agent,
   AgentTag,
+  AiAccountInfo,
+  AiChatResponse,
+  AiConversation,
   Event,
   FingerprintCandidate,
   Group,
@@ -195,6 +200,87 @@ export async function matchFingerprint(input: {
   });
 }
 
+export async function listAchievements(): Promise<AchievementStatus[]> {
+  return http<AchievementStatus[]>('/api/achievements');
+}
+
+export async function getAchievementProgress(): Promise<AchievementStatus[]> {
+  return http<AchievementStatus[]>('/api/achievements/progress');
+}
+
+export async function checkAchievements(): Promise<AchievementCheckResponse> {
+  return http<AchievementCheckResponse>('/api/achievements/check', { method: 'POST' });
+}
+
 export function getServerUrl() {
   return serverUrl;
+}
+
+// --- AI Script Generator ---
+
+export async function listAiAccounts(): Promise<AiAccountInfo[]> {
+  return http<AiAccountInfo[]>('/api/ai/accounts');
+}
+
+export async function createAiAccount(input: {
+  name: string;
+  provider: string;
+  auth_type: string;
+  api_key: string;
+  model?: string;
+}): Promise<AiAccountInfo> {
+  return http<AiAccountInfo>('/api/ai/accounts', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function removeAiAccount(accountId: string): Promise<void> {
+  await http<unknown>(`/api/ai/accounts/${encodeURIComponent(accountId)}/remove`, {
+    method: 'POST',
+  });
+}
+
+export async function listAiConversations(): Promise<AiConversation[]> {
+  return http<AiConversation[]>('/api/ai/conversations');
+}
+
+export async function createAiConversation(input: {
+  account_id: string;
+  title?: string;
+}): Promise<AiConversation> {
+  return http<AiConversation>('/api/ai/conversations', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getAiConversation(convId: string): Promise<AiConversation> {
+  return http<AiConversation>(`/api/ai/conversations/${encodeURIComponent(convId)}`);
+}
+
+export async function removeAiConversation(convId: string): Promise<void> {
+  await http<unknown>(`/api/ai/conversations/${encodeURIComponent(convId)}/remove`, {
+    method: 'POST',
+  });
+}
+
+export async function aiChat(convId: string, message: string, signal?: AbortSignal): Promise<AiChatResponse> {
+  const timeout = AbortSignal.timeout(120_000);
+  const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  return http<AiChatResponse>(
+    `/api/ai/conversations/${encodeURIComponent(convId)}/chat`,
+    { method: 'POST', body: JSON.stringify({ message }), signal: combined },
+  );
+}
+
+export async function saveAiScenario(convId: string): Promise<{
+  saved: boolean;
+  scenario_id: string;
+  path: string;
+  note: string;
+}> {
+  return http(`/api/ai/conversations/${encodeURIComponent(convId)}/save-scenario`, {
+    method: 'POST',
+  });
 }

@@ -162,3 +162,80 @@ export type FingerprintCandidate = {
   version?: string | null;
   confidence: number;
 };
+
+export type AchievementCategory = 'combat' | 'recon' | 'stealth' | 'mastery';
+
+export type Achievement = {
+  id: string;
+  name: string;
+  description: string;
+  category: AchievementCategory;
+  icon: string;
+  requirement_type: 'scenario_count' | 'verdict_streak' | 'specific_scenario';
+  requirement_value: string;
+  created_at: string;
+};
+
+export type AchievementStatus = {
+  achievement: Achievement;
+  unlocked: boolean;
+  unlocked_at?: string | null;
+  progress: number;
+};
+
+export type AchievementCheckResponse = {
+  checked_runs: number;
+  unlocked_achievement_ids: string[];
+};
+
+export type CharacterClass =
+  | 'striker'    // Windows agents
+  | 'phantom'    // Linux agents
+  | 'sentinel'   // macOS agents
+  | 'commander'  // Server/C2
+  | 'analyst'    // Intel/data
+  | 'operator';  // Generic field
+
+export function osToClass(os: string): CharacterClass {
+  const lower = os.toLowerCase();
+  if (lower.includes('windows')) return 'striker';
+  if (lower.includes('linux')) return 'phantom';
+  if (lower.includes('mac') || lower.includes('darwin')) return 'sentinel';
+  return 'operator';
+}
+
+// --- AI Script Generator ---
+
+export type AiProvider = 'claude' | 'openai' | 'gemini';
+export type AiAuthType = 'api_key' | 'subscription';
+
+export type AiAccountInfo = {
+  id: string;
+  name: string;
+  provider: AiProvider;
+  auth_type: AiAuthType;
+  model: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type AiMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+export type AiConversation = {
+  id: string;
+  account_id: string;
+  title: string;
+  messages_json: string;
+  scenario_draft: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AiChatResponse = {
+  reply: string;
+  scenario_draft: Record<string, unknown> | null;
+  messages: AiMessage[];
+};

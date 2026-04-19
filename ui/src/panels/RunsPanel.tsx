@@ -2,11 +2,33 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRun, listAgents, listRuns, listScenarios } from '../lib/api';
 import type { Agent, Run, ScenarioMeta } from '../lib/types';
 import { RunDetailPanel } from './RunDetailPanel';
+import { MissionBriefing } from '../components/MissionBriefing';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useSound } from '../hooks/useSound';
+
+function statusColor(s: string) {
+  const lo = s.toLowerCase();
+  if (lo === 'completed') return 'var(--status-victory)';
+  if (lo === 'dispatched' || lo === 'running') return 'var(--status-active)';
+  if (lo === 'pending') return 'var(--status-pending)';
+  if (lo === 'failed') return 'var(--status-defeat)';
+  return 'var(--muted)';
+}
+
+function statusIcon(s: string) {
+  const lo = s.toLowerCase();
+  if (lo === 'completed') return '✓';
+  if (lo === 'dispatched' || lo === 'running') return '▶';
+  if (lo === 'pending') return '⏳';
+  if (lo === 'failed') return '✕';
+  return '○';
+}
 
 export function RunsPanel(props: {
   selectedRunId: string | null;
   onSelectRun: (runId: string | null) => void;
 }) {
+  const { playSfx } = useSound();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [scenarios, setScenarios] = useState<ScenarioMeta[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -66,25 +88,36 @@ export function RunsPanel(props: {
         throw new Error('Select an agent');
       }
       if (!payload.scenario_id) throw new Error('Select a scenario');
+      playSfx('deploy');
       const run = await createRun(payload);
-      setStatus(`queued run ${run.id}`);
+      setStatus(`Operation deployed → ${run.id.slice(0, 8)}`);
+      playSfx('success');
       setParamsJson('');
       props.onSelectRun(run.id);
       void refreshRuns();
     } catch (e) {
+      playSfx('failure');
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
   }
 
+  const completedCount = runs.filter((r) => r.status.toLowerCase() === 'completed').length;
+  const pendingCount = runs.filter((r) => r.status.toLowerCase() === 'pending').length;
+
   return (
     <div className="content">
       <div className="grid2">
-        <div className="card">
-          <h3 className="cardTitle">Queue A BAS Run</h3>
+        <div className="card" style={{ borderColor: 'var(--game-border)' }}>
+          <h3 className="cardTitle" style={{ color: 'var(--neon-cyan)' }}>
+            🚀 Deploy Operation
+          </h3>
+
           <div className="field">
-            <div className="label">Agent</div>
+            <div className="label" style={{ color: 'var(--neon-cyan)' }}>
+              🎯 Target Agent
+            </div>
             <select
               className="input"
               value={agentId}
@@ -100,7 +133,9 @@ export function RunsPanel(props: {
           </div>
 
           <div className="field">
-            <div className="label">Scenario</div>
+            <div className="label" style={{ color: 'var(--neon-cyan)' }}>
+              📋 Scenario
+            </div>
             <select
               className="input"
               value={scenarioId}
@@ -114,14 +149,16 @@ export function RunsPanel(props: {
               ))}
             </select>
             {selectedScenario ? (
-              <div style={{ color: 'var(--muted)', fontSize: 12 }}>
-                test_id: <span className="mono">{selectedScenario.test_id}</span>
+              <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>
+                test_id: <span className="mono" style={{ color: 'var(--neon-green)' }}>{selectedScenario.test_id}</span>
               </div>
             ) : null}
           </div>
 
           <div className="field">
-            <div className="label">params_json (optional)</div>
+            <div className="label" style={{ color: 'var(--neon-purple)' }}>
+              ⚙ params_json <span style={{ fontSize: 11, color: 'var(--muted-2)' }}>(optional)</span>
+            </div>
             <textarea
               className="input"
               placeholder='{"target":"host-a"}'
@@ -129,33 +166,68 @@ export function RunsPanel(props: {
               onChange={(e) => setParamsJson(e.target.value)}
               rows={4}
               disabled={busy}
+              style={{ borderColor: 'var(--game-border)' }}
             />
           </div>
 
           <div className="row">
-            <button className="btn" onClick={() => void submit()} disabled={busy}>
-              {busy ? 'Queuing…' : 'Queue Run'}
+            <button
+              className="btn"
+              style={{
+                background: 'linear-gradient(180deg, rgba(0,240,255,0.2), rgba(0,240,255,0.06))',
+                borderColor: 'rgba(0,240,255,0.4)',
+              }}
+              onClick={() => void submit()}
+              disabled={busy}
+            >
+              {busy ? '⏳ Queuing…' : '🚀 Deploy'}
             </button>
-            {status ? <span className="mono">{status}</span> : null}
+            {status ? (
+              <span className="mono" style={{ color: 'var(--status-victory)' }}>{status}</span>
+            ) : null}
             {error ? <span style={{ color: 'var(--danger)' }}>{error}</span> : null}
           </div>
         </div>
 
-        <div className="card">
-          <h3 className="cardTitle">Selected Agent</h3>
+        <div className="card" style={{ borderColor: 'var(--game-border)' }}>
+          <h3 className="cardTitle" style={{ color: 'var(--neon-yellow)' }}>
+            🎖 Operation Intel
+          </h3>
           {selectedAgent ? (
-            <div style={{ display: 'grid', gap: 8 }}>
-              <div className="row">
-                <span className="pill">{selectedAgent.status}</span>
-                <span className="pill">{selectedAgent.os}</span>
-                <span className="pill">{selectedAgent.arch}</span>
+            <div style={{ display: 'grid', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--neon-cyan)', marginBottom: 6, fontWeight: 600 }}>
+                  Selected Agent
+                </div>
+                <div className="row" style={{ flexWrap: 'wrap' }}>
+                  <span className="tagBadge" style={{ borderColor: statusColor(selectedAgent.status), color: statusColor(selectedAgent.status) }}>
+                    ● {selectedAgent.status}
+                  </span>
+                  <span className="tagBadge">{selectedAgent.os}</span>
+                  <span className="tagBadge">{selectedAgent.arch}</span>
+                </div>
+                <div className="mono" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+                  {selectedAgent.id}
+                </div>
+                <div className="mono" style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  last_seen: {selectedAgent.last_seen}
+                </div>
               </div>
-              <div className="mono">id: {selectedAgent.id}</div>
-              <div className="mono">last_seen: {selectedAgent.last_seen}</div>
+              {selectedScenario ? (
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12 }}>
+                  <div style={{ fontSize: 12, color: 'var(--neon-yellow)', marginBottom: 6, fontWeight: 600 }}>
+                    Mission Briefing
+                  </div>
+                  <MissionBriefing scenario={selectedScenario} />
+                </div>
+              ) : null}
             </div>
           ) : (
-            <div style={{ color: 'var(--muted)' }}>
-              No agent selected. Start `sim_agent` to register one.
+            <div className="dialogueBox">
+              <div className="dialogueSpeaker" style={{ color: 'var(--neon-cyan)' }}>COMMAND</div>
+              <div className="dialogueText" style={{ color: 'var(--muted)' }}>
+                No agent online. Deploy an agent to begin operations.
+              </div>
             </div>
           )}
         </div>
@@ -163,44 +235,75 @@ export function RunsPanel(props: {
 
       <div style={{ height: 14 }} />
 
-      <div className="card">
+      <div className="card" style={{ borderColor: 'var(--game-border)' }}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h3 className="cardTitle" style={{ margin: 0 }}>
-            Recent Runs
+          <h3 className="cardTitle" style={{ margin: 0, color: 'var(--neon-purple)' }}>
+            📜 Operation Log
           </h3>
-          <button className="btn" onClick={() => void refreshRuns()} disabled={busy}>
-            Refresh
-          </button>
+          <div className="row">
+            <span className="tagBadge" style={{ borderColor: 'rgba(57,255,20,0.3)', color: 'var(--status-victory)' }}>
+              ✓ {completedCount}
+            </span>
+            <span className="tagBadge" style={{ borderColor: 'rgba(255,225,86,0.3)', color: 'var(--status-pending)' }}>
+              ⏳ {pendingCount}
+            </span>
+            <button
+              className="btn"
+              onClick={() => void refreshRuns()}
+              disabled={busy}
+            >
+              🔄 Refresh
+            </button>
+          </div>
         </div>
         <div style={{ height: 10 }} />
         <table className="table">
           <thead>
             <tr>
-              <th className="th">created_at</th>
-              <th className="th">test_id</th>
-              <th className="th">status</th>
-              <th className="th">run_id</th>
+              <th className="th">Timestamp</th>
+              <th className="th">Test ID</th>
+              <th className="th">Status</th>
+              <th className="th">Operation ID</th>
             </tr>
           </thead>
           <tbody>
-            {runs.map((r) => (
-              <tr
-                key={r.id}
-                onClick={() => props.onSelectRun(r.id)}
-                style={{ cursor: 'pointer', background: props.selectedRunId === r.id ? 'rgba(101, 214, 255, 0.06)' : undefined }}
-              >
-                <td className="td mono">{r.created_at}</td>
-                <td className="td">{r.test_id}</td>
-                <td className="td">
-                  <span className="pill">{r.status}</span>
-                </td>
-                <td className="td mono">{r.id}</td>
-              </tr>
-            ))}
+            <AnimatePresence>
+              {runs.map((r) => (
+                <motion.tr
+                  key={r.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  onClick={() => { playSfx('click'); props.onSelectRun(r.id); }}
+                  style={{
+                    cursor: 'pointer',
+                    background: props.selectedRunId === r.id ? 'rgba(0, 240, 255, 0.06)' : undefined,
+                  }}
+                >
+                  <td className="td mono">{r.created_at}</td>
+                  <td className="td">
+                    <span style={{ color: 'var(--neon-cyan)' }}>{r.test_id}</span>
+                  </td>
+                  <td className="td">
+                    <span
+                      className="tagBadge"
+                      style={{
+                        borderColor: statusColor(r.status),
+                        color: statusColor(r.status),
+                      }}
+                    >
+                      {statusIcon(r.status)} {r.status}
+                    </span>
+                  </td>
+                  <td className="td mono" style={{ fontSize: 11, color: 'var(--muted)' }}>{r.id}</td>
+                </motion.tr>
+              ))}
+            </AnimatePresence>
             {runs.length === 0 ? (
               <tr>
-                <td className="td" colSpan={4} style={{ color: 'var(--muted)' }}>
-                  No runs yet.
+                <td className="td" colSpan={4} style={{ color: 'var(--muted)', textAlign: 'center', padding: 20 }}>
+                  No operations deployed yet. Configure and deploy above.
                 </td>
               </tr>
             ) : null}

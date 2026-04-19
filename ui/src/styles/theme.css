@@ -20,6 +20,23 @@
   --shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
   --radius: 18px;
   --radius-sm: 12px;
+
+  /* Game-specific neon colors */
+  --neon-cyan: #00f0ff;
+  --neon-pink: #ff2d95;
+  --neon-yellow: #ffe156;
+  --neon-green: #39ff14;
+  --neon-purple: #bf5af2;
+
+  /* Game UI surfaces */
+  --game-panel: rgba(10, 14, 26, 0.88);
+  --game-border: rgba(0, 240, 255, 0.2);
+
+  /* Status colors for game mechanics */
+  --status-victory: #39ff14;
+  --status-defeat: #ff2d95;
+  --status-pending: #ffe156;
+  --status-active: #00f0ff;
 }
 
 * {
@@ -287,4 +304,267 @@ textarea {
   .grid2 {
     grid-template-columns: 1fr;
   }
+}
+
+.characterCard {
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--game-border);
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.06), rgba(255, 45, 149, 0.04));
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.characterCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.15);
+  border-color: rgba(0, 240, 255, 0.4);
+}
+
+.characterCardSelected {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 24px rgba(0, 240, 255, 0.25);
+}
+
+.statBar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.statBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--neon-cyan), var(--neon-green));
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.missionCard {
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--game-border);
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.04), rgba(191, 90, 242, 0.04));
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.missionCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.12);
+  border-color: rgba(0, 240, 255, 0.35);
+}
+
+.combatLog {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.neonGlow {
+  text-shadow: 0 0 10px var(--neon-cyan), 0 0 20px rgba(0, 240, 255, 0.3);
+}
+
+.neonBorder {
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+  border-color: rgba(0, 240, 255, 0.4);
+}
+
+.scanline {
+  position: relative;
+}
+
+.scanline::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+.difficultyStars {
+  letter-spacing: 2px;
+  color: var(--neon-yellow);
+}
+
+.tagBadge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--game-border);
+  background: rgba(0, 240, 255, 0.08);
+  color: var(--neon-cyan);
+}
+
+.gridRoster {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.gameNavBtn {
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 200ms ease;
+  color: var(--muted);
+  border-left: 3px solid transparent;
+  font-size: 14px;
+}
+
+.gameNavBtn:hover {
+  background: rgba(0, 240, 255, 0.06);
+  color: var(--text);
+}
+
+.gameNavBtnActive {
+  background: rgba(0, 240, 255, 0.1);
+  color: var(--neon-cyan);
+  border-left-color: var(--neon-cyan);
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+}
+
+.battleResultPass {
+  background: linear-gradient(135deg, rgba(57, 255, 20, 0.1), rgba(0, 240, 255, 0.05));
+  border: 1px solid rgba(57, 255, 20, 0.3);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.battleResultFail {
+  background: linear-gradient(135deg, rgba(255, 45, 149, 0.1), rgba(255, 107, 107, 0.05));
+  border: 1px solid rgba(255, 45, 149, 0.3);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.battleResultPending {
+  background: linear-gradient(135deg, rgba(255, 225, 86, 0.08), rgba(0, 240, 255, 0.04));
+  border: 1px solid rgba(255, 225, 86, 0.25);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.dialogueBox {
+  background: linear-gradient(180deg, rgba(10, 14, 26, 0.95), rgba(18, 22, 33, 0.9));
+  border: 1px solid var(--game-border);
+  border-radius: var(--radius-sm);
+  padding: 16px 20px;
+}
+
+.dialogueSpeaker {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.dialogueText {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.osIcon {
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid var(--game-border);
+}
+
+.gamePanel {
+  background: linear-gradient(180deg, rgba(10, 14, 26, 0.92), rgba(18, 22, 33, 0.78));
+  border: 1px solid var(--game-border);
+}
+
+.achievementsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 14px;
+}
+
+.achievementIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  background: rgba(0, 240, 255, 0.08);
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+}
+
+.achievementLocked {
+  opacity: 0.82;
+  filter: saturate(0.7);
+}
+
+.skillTreeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.skillNode {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.skillNodeUnlocked {
+  border-color: rgba(57, 255, 20, 0.35);
+  box-shadow: 0 0 14px rgba(57, 255, 20, 0.12);
+}
+
+.skillDependencyList {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.skillDependencyItem {
+  font-size: 12px;
+  color: var(--muted);
+  border-left: 2px solid rgba(0, 240, 255, 0.28);
+  padding-left: 8px;
+}
+
+.muteToggle {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--game-border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 200ms ease, border-color 200ms ease;
+  line-height: 1;
+}
+
+.muteToggle:hover {
+  background: rgba(0, 240, 255, 0.08);
+  border-color: rgba(0, 240, 255, 0.3);
 }
