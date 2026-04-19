@@ -79,3 +79,139 @@ impl FingerprintMatcher {
         out
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_rule(
+        service: &str,
+        product: Option<&str>,
+        regex: &str,
+        version_group: Option<usize>,
+        confidence: Option<f32>,
+    ) -> FingerprintRule {
+        FingerprintRule {
+            service: service.into(),
+            product: product.map(|p| p.into()),
+            regex: regex.into(),
+            version_group,
+            confidence,
+        }
+    }
+
+    #[test]
+    fn test_empty_matcher() {
+        let matcher = FingerprintMatcher::empty();
+        let results = matcher.match_banner("anything", 10);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_from_rules_valid() {
+        let rules = vec![make_rule(
+            "http",
+            Some("nginx"),
+            r"nginx/([\d.]+)",
+            Some(1),
+            Some(0.85),
+        )];
+        let matcher = FingerprintMatcher::from_rules(rules);
+        assert!(matcher.is_ok());
+    }
+
+    #[test]
+    fn test_from_rules_invalid_regex() {
+        let rules = vec![make_rule("http", None, r"[invalid(", None, None)];
+        let result = FingerprintMatcher::from_rules(rules);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_match_banner_single_match() {
+        let rules = vec![make_rule(
+            "http",
+            Some("nginx"),
+            r"nginx/([\d.]+)",
+            Some(1),
+            Some(0.85),
+        )];
+        let matcher = FingerprintMatcher::from_rules(rules).unwrap();
+        let results = matcher.match_banner("Server: nginx/1.24.0\r\n", 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].service, "http");
+        assert_eq!(results[0].product.as_deref(), Some("nginx"));
+        assert_eq!(results[0].version.as_deref(), Some("1.24.0"));
+        assert!((results[0].confidence - 0.85).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_match_banner_no_match() {
+        let rules = vec![make_rule(
+            "http",
+            Some("nginx"),
+            r"nginx/([\d.]+)",
+            Some(1),
+            Some(0.85),
+        )];
+        let matcher = FingerprintMatcher::from_rules(rules).unwrap();
+        let results = matcher.match_banner("Server: apache/2.4.41", 10);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_match_banner_multiple_matches() {
+        let rules = vec![
+            make_rule("http", Some("nginx"), r"nginx", None, Some(0.8)),
+            make_rule("http", Some("server"), r"Server:", None, Some(0.5)),
+        ];
+        let matcher = FingerprintMatcher::from_rules(rules).unwrap();
+        let results = matcher.match_banner("Server: nginx/1.24.0", 10);
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_match_banner_limit() {
+        let rules = vec![
+            make_rule("http", Some("nginx"), r"nginx", None, Some(0.8)),
+            make_rule("http", Some("server"), r"Server:", None, Some(0.5)),
+        ];
+        let matcher = FingerprintMatcher::from_rules(rules).unwrap();
+        let results = matcher.match_banner("Server: nginx/1.24.0", 1);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].product.as_deref(), Some("nginx"));
+    }
+
+    #[test]
+    fn test_match_banner_version_group_extraction() {
+        let rules = vec![make_rule(
+            "ssh",
+            Some("OpenSSH"),
+            r"SSH-[\d.]+-OpenSSH_([\d.p]+)",
+            Some(1),
+            Some(0.9),
+        )];
+        let matcher = FingerprintMatcher::from_rules(rules).unwrap();
+        let results = matcher.match_banner("SSH-2.0-OpenSSH_8.9p1", 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].version.as_deref(), Some("8.9p1"));
+    }
+
+    #[test]
+    fn test_match_banner_no_version_group() {
+        let rules = vec![make_rule("http", Some("nginx"), r"nginx", None, Some(0.7))];
+        let matcher = FingerprintMatcher::from_rules(rules).unwrap();
+        let results = matcher.match_banner("nginx/1.24.0", 10);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].version.is_none());
+    }
+
+    #[test]
+    fn test_default_confidence() {
+        let rules = vec![make_rule("http", None, r"HTTP", None, None)];
+        let matcher = FingerprintMatcher::from_rules(rules).unwrap();
+        let results = matcher.match_banner("HTTP/1.1 200 OK", 10);
+        assert_eq!(results.len(), 1);
+        assert!((results[0].confidence - 0.7).abs() < f32::EPSILON);
+    }
+}

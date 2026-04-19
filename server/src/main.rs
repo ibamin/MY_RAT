@@ -1,3 +1,6 @@
+mod ai;
+mod auth;
+mod crypto;
 mod db;
 mod fingerprint;
 mod handlers;
@@ -6,6 +9,7 @@ mod scenarios;
 
 use axum::{
     Router,
+    middleware,
     routing::{get, post},
 };
 use handlers::AppState;
@@ -123,79 +127,81 @@ async fn main() {
                 HeaderValue::from_static("http://localhost:5173"),
                 HeaderValue::from_static("http://127.0.0.1:4173"),
                 HeaderValue::from_static("http://localhost:4173"),
-                HeaderValue::from_static("null"),
             ])
             .allow_methods([Method::GET, Method::POST])
             .allow_headers([CONTENT_TYPE])
     };
 
-    let app = Router::new()
-        .route("/api/scenarios", get(handlers::list_scenarios))
-        .route(
-            "/api/scenarios/:scenario_id",
-            get(handlers::get_scenario),
-        )
+    // Agent-facing routes: no operator auth (agents authenticate with their GUID)
+    let agent_routes = Router::new()
         .route("/api/agents/register", post(handlers::register_agent))
+        .route("/api/agents/:id/heartbeat", post(handlers::heartbeat))
+        .route("/api/runs/pending/:agent_id", get(handlers::get_pending_runs))
+        .route("/api/runs/:run_id/result", post(handlers::update_run_result))
+        .route(
+            "/api/runs/:run_id/steps/:step_id/complete",
+            post(handlers::complete_step),
+        )
+        .route("/api/evidence", post(handlers::create_evidence))
+        .route("/api/events", post(handlers::create_event))
+        .with_state(state.clone());
+
+    // Operator-facing routes: require OPERATOR_TOKEN bearer token (if env var is set)
+    let operator_routes = Router::new()
+        .route("/api/scenarios", get(handlers::list_scenarios))
+        .route("/api/scenarios/validate", post(handlers::validate_scenario))
+        .route("/api/scenarios/:scenario_id", get(handlers::get_scenario))
         .route("/api/agents/list", get(handlers::list_agents))
         .route("/api/agents/pending", get(handlers::list_pending_agents))
         .route("/api/agents/:id/approve", post(handlers::approve_agent))
         .route("/api/agents/:id/block", post(handlers::block_agent))
-        .route("/api/agents/:id/heartbeat", post(handlers::heartbeat))
+        .route("/api/agents/build", post(handlers::build_agent))
+        .route("/api/agents/builds", get(handlers::list_builds))
+        .route("/api/agents/builds/:guid", get(handlers::get_build))
+        .route("/api/agents/builds/:guid/download", get(handlers::download_build))
         .route("/api/agents/:id/runs", get(handlers::list_agent_runs))
         .route("/api/agents/:id/groups", get(handlers::list_agent_groups))
         .route(
             "/api/agents/:id/tags",
             get(handlers::list_agent_tags).post(handlers::add_agent_tag),
         )
-        .route(
-            "/api/agents/:id/tags/remove",
-            post(handlers::remove_agent_tag),
-        )
+        .route("/api/agents/:id/tags/remove", post(handlers::remove_agent_tag))
         .route("/api/groups", get(handlers::list_groups).post(handlers::create_group))
-        .route(
-            "/api/groups/:group_id/agents",
-            get(handlers::list_group_agents),
-        )
-        .route(
-            "/api/groups/:group_id/assign",
-            post(handlers::assign_agent_to_group),
-        )
-        .route(
-            "/api/groups/:group_id/unassign",
-            post(handlers::unassign_agent_from_group),
-        )
-        .route(
-            "/api/groups/:group_id/runs",
-            post(handlers::create_group_runs),
-        )
+        .route("/api/groups/:group_id/agents", get(handlers::list_group_agents))
+        .route("/api/groups/:group_id/assign", post(handlers::assign_agent_to_group))
+        .route("/api/groups/:group_id/unassign", post(handlers::unassign_agent_from_group))
+        .route("/api/groups/:group_id/runs", post(handlers::create_group_runs))
+        .route("/api/achievements", get(handlers::list_achievements))
+        .route("/api/achievements/progress", get(handlers::get_achievement_progress))
+        .route("/api/achievements/check", post(handlers::check_achievements))
         .route("/api/fingerprint/match", post(handlers::fingerprint_match))
         .route("/api/runs", post(handlers::create_run).get(handlers::list_runs))
         .route("/api/runs/:run_id", get(handlers::get_run))
+        .route("/api/runs/:run_id/replay", post(handlers::replay_run))
+        .route("/api/runs/:run_id/replay-data", get(handlers::get_replay_data))
         .route(
             "/api/runs/:run_id/operator-actions",
             post(handlers::create_operator_action).get(handlers::list_operator_actions),
         )
         .route("/api/runs/:run_id/events", get(handlers::list_run_events))
         .route("/api/runs/:run_id/steps", get(handlers::list_run_steps))
-        .route(
-            "/api/runs/:run_id/evidence",
-            get(handlers::list_run_evidence),
-        )
+        .route("/api/runs/:run_id/evidence", get(handlers::list_run_evidence))
         .route("/api/runs/:run_id/verdict", get(handlers::get_run_verdict))
-        .route("/api/evidence", post(handlers::create_evidence))
-        .route(
-            "/api/runs/pending/:agent_id",
-            get(handlers::get_pending_runs),
-        )
-        .route(
-            "/api/runs/:run_id/result",
-            post(handlers::update_run_result),
-        )
-        .route("/api/events", post(handlers::create_event))
         .route("/api/events", get(handlers::list_events))
-        .layer(cors)
-        .layer(TraceLayer::new_for_http())
+        .route("/api/ai/accounts", get(ai::list_ai_accounts).post(ai::create_ai_account))
+        .route("/api/ai/accounts/:id/remove", post(ai::remove_ai_account))
+        .route("/api/ai/conversations", get(ai::list_ai_conversations).post(ai::create_ai_conversation))
+        .route("/api/ai/conversations/:id", get(ai::get_ai_conversation))
+        .route("/api/ai/conversations/:id/remove", post(ai::remove_ai_conversation))
+        .route("/api/ai/conversations/:id/chat", post(ai::ai_chat))
+        .route("/api/ai/conversations/:id/save-scenario", post(ai::save_scenario))
+        .route_layer(middleware::from_fn(auth::require_operator_token))
         .with_state(state);
+
+    let app = agent_routes
+        .merge(operator_routes)
+        .layer(cors)
+        .layer(TraceLayer::new_for_http());
 
     println!("C2 Server listening on {}", addr);
 
