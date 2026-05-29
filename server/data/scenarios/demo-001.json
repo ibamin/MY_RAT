@@ -1,0 +1,70 @@
+{
+  "scenario_id": "demo-001",
+  "test_id": "BAS-DEMO-001",
+  "title": "Demo Mission: Event + Verdict",
+  "difficulty": 1,
+  "version": "1.0.0",
+  "estimated_time_sec": 30,
+  "steps": [
+    {
+      "step_id": "s1",
+      "name": "Initial Access (Simulated)",
+      "requires_choice_id": null,
+      "actions": [
+        { "action_id": "a1", "title": "Simulate access", "kind": "emit_events" }
+      ],
+      "choices": [
+        { "choice_id": "c1", "title": "Stealth route" },
+        { "choice_id": "c2", "title": "Loud route" }
+      ],
+      "assertions": [
+        {
+          "assertion_id": "as1",
+          "description": "telemetry evidence attached",
+          "required": true,
+          "type": "evidence_kind",
+          "kind": "telemetry",
+          "contains": null
+        }
+      ]
+    },
+    {
+      "step_id": "s2-stealth",
+      "name": "Execution (Stealth)",
+      "requires_choice_id": "c1",
+      "actions": [
+        { "action_id": "a2", "title": "Simulate execution", "kind": "emit_events" }
+      ],
+      "choices": [],
+      "assertions": [
+        {
+          "assertion_id": "as2",
+          "description": "telemetry evidence attached",
+          "required": true,
+          "type": "evidence_kind",
+          "kind": "telemetry",
+          "contains": null
+        }
+      ]
+    },
+    {
+      "step_id": "s2-loud",
+      "name": "Execution (Loud)",
+      "requires_choice_id": "c2",
+      "actions": [
+        { "action_id": "a2", "title": "Simulate execution", "kind": "emit_events" }
+      ],
+      "choices": [],
+      "assertions": [
+        {
+          "assertion_id": "as3",
+          "description": "telemetry evidence attached",
+          "required": true,
+          "type": "evidence_kind",
+          "kind": "telemetry",
+          "contains": null
+        }
+      ]
+    }
+  ]
+}
